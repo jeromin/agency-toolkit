@@ -1,0 +1,26 @@
+# This is a sample of hte configuration files
+
+# The script uses Google or AWS storage
+# Choices are: gsutil / aws / s3cmd
+bucket_provider=gsutil
+
+# Enter your bucket name, or leave empty to use the script name
+bucket_name=my-bucket
+
+# Here are a website configuration to use the toolkit
+# The first is using SSH as default
+website1_ssh_hostname=ftp.example.com
+website1_ssh_user=user
+website1_ssh_key=~/.ssh/id_rsa
+website1_remote_dir=/var/www
+website1_mysql_user=mysql_user
+website1_mysql_db=database_name
+website1_mysql_pwd=password
+
+# The second one is using SCP, so we need to declare `protocol`
+# and mysql isn't available since SSH is not
+website2_ssh_hostname=ftp.website2.com
+website2_ssh_user=user2
+website2_ssh_key=~/.ssh/website2
+website2_remote_dir=html # SCP can't understand `~`, so put aboslute or relative path  
+website2_protocol=scp
