@@ -1,7 +1,7 @@
 # agency-toolkit
 This little tool is used to help with websites management [@Weedo.Agency](https://weedo.agency).
 
-It uses SSH conneciton to backup a remote folder and a mysql database.
+It uses SSH connection to backup a remote folder and a mysql database.
 Then it creates an archive which will be sent to a bucket on Google Storage or Amazon S3.
 
 *I choosed to download the whole site in a temp folder in case the disk space on remote isn't enough.*
@@ -10,10 +10,16 @@ Then it creates an archive which will be sent to a bucket on Google Storage or A
 
 ⚠ **Warning:** If you want to give these tool a try, you should first review the code. Don’t blindly use it unless you know what that entails. Use at your own risk!
 
-You can clone the repository wherever you want.
+You can clone the repository wherever you want:
 
 ```bash
 git clone https://github.com/jeromin/agency-toolkit.git && cd agency-toolkit
+```
+
+Or install without git:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jeromin/agency-toolkit/master/toolkit.sh
 ```
 
 Simply `./toolkit.sh` to test it out.
