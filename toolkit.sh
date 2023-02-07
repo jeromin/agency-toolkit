@@ -445,6 +445,52 @@ copyKey(){
 		output -n -e "No key or remote provided."
 	fi
 }
+cryptoVars(){
+	if [ $1 ]; then key_path="${1//\~/$HOME}"
+	else read -p "Enter full path name of the SSH key: " key_path; fi
+
+	key_name=$(basename $key_path)
+	key=~/.ssh/$key_name
+	file=$2
+	dir=$(dirname $file)
+	sign_key=$dir/$key_name.key
+
+	pkcs8=$key.pub.pkcs8
+	if [ ! -f $pkcs8 ]; then
+		ssh-keygen -e -f $key.pub -m PKCS8 > $pkcs8; fi
+	pem_key=$key.pem
+	if [ ! -f $pem_key ]; then
+		ssh-keygen -p -m PKCS8 -f $key_path > $pem_key; fi
+}
+encryptFile(){
+	cryptoVars $@
+
+	openssl rand -out $sign_key 32
+	openssl aes-256-cbc -in $file -out $file.enc -pass file:$sign_key
+	openssl rsautl -encrypt -pubin -inkey $pkcs8 -in $sign_key -out $sign_key.enc
+	tar -zcvf $file.tgz \
+		-C $(dirname $file) $(basename $sign_key).enc $(basename $file).enc
+	rm $sign_key $sign_key.enc $file.enc # $file
+}
+decryptFile(){
+	cryptoVars $@
+	
+	tar -zxvf $file
+	openssl rsautl -decrypt -inkey $pem_key -in $sign_key.enc -out $sign_key
+	openssl aes-256-cbc -d -in $file.enc -out $file -pass file:$sign_key
+	rm $sign_key.enc $file.enc
+}
+# decryptFile(){
+	
+# 	cryptoVars $@
+
+# 	tar -zxvf $file -C $(dirname $file)
+# 	key_enc=$(find $(dirname $file) -type f -name "*.zip.enc" -exec ls {} \;)
+	
+# 	echo openssl rsautl -decrypt -inkey $key -in $sign_key.enc -out $sign_key
+# 	echo openssl aes-256-cbc -d -in $(basename $file) -out $file.dec -pass file:$sign_key
+# 	# rm $sign_key $(basename $file).enc $(basename $file)
+# }
 
 link(){
 	if [ ! -f "$command_path$1" ];
@@ -525,6 +571,8 @@ case $1 in
 			copy) copyKey $remote $key ;;
 		esac
 	;;
+	encrypt) checkConfig; shift 1; encryptFile $@ ;;
+	decrypt) checkConfig; shift 1; decryptFile $@ ;;
 	link) link $2 ;;
 	unlink)	unlink $2 ;;
 	configure) checkConfig; newWebsite ;;
