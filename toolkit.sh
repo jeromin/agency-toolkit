@@ -3,9 +3,12 @@
 # @Weedo.Agency toolkit
 # Jeromin <me@jeromin.fr>
 
+set -e
+
 NAME=$(basename "${BASH_SOURCE[0]}")
-source_file="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/$NAME"
+source_file="$( cd "$(dirname "${BASH_SOURCE[0]}")" && pwd )/$NAME"
 vars_file="$HOME/.$NAME"
+# vars_file="$HOME/.weedo-test"
 command_path="/usr/local/bin/"
 log_file="$HOME/$NAME.log"
 
@@ -52,19 +55,20 @@ output(){
 }
 
 usage(){
-	local 
-	output -c magenta -n "$(echo $NAME | awk '{print toupper(substr($0,0,1)) tolower(substr($0,2,length($0)))}') backup toolkit."; output -n
+	# local
+	CMD=$([[ "$NAME" =~ ".sh" ]] && echo "./$NAME" || echo "$NAME")
+	output -c magenta -n "Weedo.Agency backup toolkit."; output -n
     output -c magenta -s bold -n "Usage:"
-    output -n "./$NAME ls [site]"
-    output -n "./$NAME backup [disk|mysql] site"
-    output -n "./$NAME connect site"
-    output -n "./$NAME run site command"
-    output -n "./$NAME bucket [site]"
-    output -n "./$NAME key create|copy [site]"
-    output -n "./$NAME test [disk|mysql] site"
-    output -n "./$NAME link|unlink [name]"
-    output -n "./$NAME configure|help"
-    exit 0
+    output -n "$CMD ls|list [site]"
+    output -n "$CMD backup [disk|mysql] site"
+    output -n "$CMD connect site"
+    output -n "$CMD run site command"
+    output -n "$CMD bucket [site]"
+    output -n "$CMD key create|copy [site|key user@remote]"
+    output -n "$CMD test [disk|mysql] site"
+    output -n "$CMD link|unlink [name]"
+    output -n "$CMD configure|log|help"
+    exit
 }
 finish(){
 	if [ $? = 1 ]; then
@@ -76,58 +80,78 @@ trap finish QUIT EXIT
 newWebsite(){
 	read -p "Name (ID) of the website : " name
 
-	if [ ! -z $name ]; then
+	if [ $name ]; then
+		readonly "$name"=$name; if [ $? -eq 1 ]; then
+			output -n -s bold "This ID can't be used as a variable, sorry."; exit; fi
 		read -p "SSH hostname : " ssh_hostname; fi
-	if [ ! -z $ssh_hostname ]; then 
+	if [ $ssh_hostname ]; then 
 		read -p "SSH user : " ssh_user; fi
-	if [ ! -z $ssh_user ]; then
-		read -p "Do you need to create an SSH key ? [y/n] ? " create
-		if [ ! -z $create ] && [ $create == "y" ]; then
+	if [ $ssh_user ]; then
+		read -p "Do you need to create an SSH key ? [y/n] " create
+		if [ $create ] && [ $create == "y" ]; then
 			createKey $ssh_user@$ssh_hostname
 			ssh_key=$ssh_key_path
 		else
 			read -p "SSH key path : " ssh_key
 		fi
 	fi
-	if [ ! -z $ssh_key ]; then 
+	if [ $ssh_key ]; then 
 		read -p "Remote folder path : " remote_dir; fi
-	if [ ! -z $remote_dir ]; then
-		read -p "Which transfer protocol will you use [ssh|scp] ? " protocol
+	if [ $remote_dir ]; then
+		read -p "Which transfer protocol will you use [ssh|sftp] ? " protocol
 	fi
-	if [ $protocol == "ssh" ]; then
+	if [ $protocol ]; then
+		read -p "Do you want to add a MySql databse to backup ? [y/n] " mysql
+	fi
+	if [ $protocol == "sftp" ] && [ mysql == "y" ]; then
+		read -p "Mysql backup will done over HTTP, specify the website url [ default http://${ssh_hostname#[[:alpha:]]*.} ] " url
+	fi
+	if [ $mysql ] && [ $mysql == "y" ]; then
+		read -p "MySql host [default localhost] : " mysql_host
 		read -p "MySql user : " mysql_user
 		read -p "MySql database : " mysql_db
 		read -p "MySql password : " mysql_pwd
+		read -p "MySql port [default 3306] : " mysql_port
 	fi
 
-	if [ ! -z $name ] && [ ! -z $ssh_hostname ] && [ ! -z $ssh_user ] && [ ! -z $ssh_key ] && [ ! -z $remote_dir ]; then
+	if [ $name ] && [ $ssh_hostname ] && [ $ssh_user ] && [ $ssh_key ] && [ $remote_dir ]; then
+		echo >> "$vars_file"
+
 		echo ${name}_ssh_hostname=$ssh_hostname >> $vars_file
 		echo ${name}_ssh_user=$ssh_user >> $vars_file
 		echo ${name}_ssh_key=$ssh_key >> $vars_file
 		echo ${name}_remote_dir=$remote_dir >> $vars_file
-		if [[ $protocol == "scp" ]]; then
+
+		if [[ $protocol == "sftp" ]]; then
 			echo ${name}_protocol=$protocol >> $vars_file; fi
 
-		if [ ! -z $mysql_user ] && [ ! -z $mysql_db ] && [ ! -z $mysql_pwd ]; then
+		if [ $url ]; then
+			echo ${name}_url=$url >> $vars_file; fi
+
+		if [ $mysql_user ] && [ $mysql_db ] && [ $mysql_pwd ];then
+			if [ $mysql_host ] && [ $mysql_host != 'localhost'  ]; then
+				echo ${name}_mysql_host=$mysql_host >> $vars_file; fi
+			if [ $mysql_port ] && [ $mysql_port != '3306'  ]; then
+				echo ${name}_mysql_pwd=$mysql_port >> $vars_file; fi
 			echo ${name}_mysql_user=$mysql_user >> $vars_file
 			echo ${name}_mysql_db=$mysql_db >> $vars_file
 			echo ${name}_mysql_pwd=$mysql_pwd >> $vars_file
 		fi
-
-		echo "\n" >> $vars_file
+		
+		output "Site"; output -s bold "$name"; output -n "created."
 	fi
 }
 configureBucket(){
 	read -p "Which provider do you want to use as Bucket ? [gsutil/aws/s3cmd] " provider
-	if [ ! -z $provider ]; then
+	if [ $provider ]; then
 		echo "bucket_provider=$provider" >> $vars_file
 		read -p "Type your bucket name, or leave empty to use script name [$NAME] " bucket_name		
 		
-		if [ ! -z $bucket_name ]; then echo "bucket_name=$bucket_name" >> $vars_file; fi
-
-		echo >> "$vars_file"
-
-	else exit 0; fi
+		if [ -z $bucket_name ]; then
+			$bucket_name=$NAME; fi
+			
+		echo "bucket_name=$bucket_name" >> $vars_file
+	else exit; fi
 }
 setup(){
 	output -h "⚙️ \x20 Let's begin setting up .."
@@ -143,12 +167,13 @@ setup(){
 	usage
 }
 checkConfig(){
-	# If vars file is present then load variables from it
 	if [ -f "$vars_file" ]; then
 		for line in $(awk -F= '{print $1}' "$vars_file"); do
-			readonly "${line}"=$(awk -F= '$1=="'$line'"{print $2}' "$vars_file")
-			IFS='_' read -r -a array <<< "${line}"
-			if [[ ${array[2]} == "hostname" ]]; then sites+=(${array[0]}); fi
+			if [ "${line:0:1}" != "#" ]; then
+				readonly "${line}"=$(awk -F= '$1=="'$line'"{print $2}' "$vars_file")
+				IFS='_' read -r -a array <<< "${line}"
+				if [[ ${array[2]} == "hostname" ]]; then sites+=(${array[0]}); fi
+			fi
 		done
 
 		bucketConfig
@@ -156,43 +181,44 @@ checkConfig(){
 		if [ ${#sites[@]} -eq 0 ]; then
 			output -n "No website configuration found."
 			read -p "Do you want to set up now ? [y/n] " answer
-			if [ ! -z $answer ] && [ $answer == "y" ]; then newWebsite
-			else exit 0; fi
+			if [ $answer ] && [ $answer == "y" ]; then newWebsite
+			else exit; fi
 		fi
 
 	else
 		output -n "No configuration file found."
 		read -p "Do you want to set ip up now ? [y/n] " answer
-		if [ ! -z $answer ] && [ $answer == "y" ]; then setup
-		else exit 0; fi
+		if [ $answer ] && [ $answer == "y" ]; then setup
+		else exit; fi
 	fi
 }
 envSetup(){
 	checkConfig
 
 	if [ -z $1 ]; then
-		output -n -e "Site name is expected."; usage; exit 0
+		output -n -e "Site name is expected."; usage; exit
 	else 
 		site=$1;
-
 		ssh_hostname="${site}_ssh_hostname"; ssh_hostname=${!ssh_hostname}
 
 		if [ -z $ssh_hostname ]; then
-			output -n -e "Site name is not correct."; usage; exit 0; fi
+			output -n -e "Site name is not correct."; usage; exit; fi
 
 		ssh_user="${site}_ssh_user"; ssh_user=${!ssh_user}
 		ssh_key="${site}_ssh_key"; ssh_key=${!ssh_key}
 		remote_dir="${site}_remote_dir"; remote_dir=${!remote_dir}
 		protocol="${site}_protocol"; protocol=${!protocol};
+		url="${site}_url"; url=${!url};
 
 		mysql_user="${site}_mysql_user"; mysql_user=${!mysql_user}
 		mysql_db="${site}_mysql_db"; mysql_db=${!mysql_db}
 		mysql_pwd="${site}_mysql_pwd"; mysql_pwd=${!mysql_pwd}
 		mysql_host="${site}_mysql_host"; mysql_host=${!mysql_host}
+		mysql_port="${site}_mysql_port"; mysql_port=${!mysql_port}
 	fi
 }
 bucketConfig(){	
-	if [ ! -z $bucket_provider ]; then
+	if [ $bucket_provider ]; then
 		if [ -z $bucket_name ]; then
 			bucket_name=$NAME
 		fi
@@ -213,10 +239,213 @@ bucketConfig(){
 	else
 		output -e "No bucket provider given."
 		read -p "Do you want to set your bucket now ? [y/n] " answer
-		if [ ! -z $answer ] && [ $answer == "y" ]; then configureBucket
-		else exit 0; fi
+		if [ $answer ] && [ $answer == "y" ]; then configureBucket
+		else exit; fi
 	fi
 }
+
+is_ssh(){
+	if [ -z $protocol ]; then return 0
+	else return 1; fi
+}
+use_ssh(){
+	ssh $ssh_user@$ssh_hostname -i $ssh_key $@
+}
+use_scp(){
+	scp -r -i $ssh_key $ssh_user@$ssh_hostname:$remote_dir $1
+}
+use_sftp(){
+	sftp -r -q -i $ssh_key $ssh_user@$ssh_hostname:$remote_dir $1
+}
+use_sftp_command(){
+	sftp -r -q -i $ssh_key $ssh_user@$ssh_hostname:$remote_dir/$@
+}
+make_zip(){
+	tar -cvzf $@
+}
+create_temp_folder(){
+	backup_name="${site}.$(date +%F_%T | tr ':' '-')"
+	tmp_folder="$(mktemp -d -t ${backup_name})"
+	tmp_backup="${backup_name}.tar.gz"
+	cd $tmp_folder
+}
+
+backup_folder(){
+	tmp_site_folder=$backup_name
+
+	if is_ssh; then
+		use_scp $tmp_site_folder
+	else
+		use_sftp $tmp_site_folder
+	fi
+}
+test_disk(){
+	if is_ssh; then
+		use_ssh du -h --max-depth=0 $remote_dir
+	else
+		output -n -s bold "$(use_sftp_command <<< "pwd")"
+	fi
+}
+
+backup_mysql(){
+	if [ $mysql_host ];
+	then 
+		mysql_init
+
+		if is_ssh; then
+			mysql_dump | gzip > $tmp_folder/$tmp_sql
+		else
+			php_mysqldump="mysqldump.php"
+			sql_dump="database.sql"
+			
+			put_php_mysqldump
+
+			curl -sL -o /dev/null "$url/$php_mysqldump?dump"
+			while [[ $(curl -sLI -o /dev/null -w %{http_code} "$url/$sql_dump") != "200" ]]; do
+				printf '.'; sleep 2
+			done
+			use_sftp_command $sql_dump $tmp_folder
+
+			# remove remote files to avoid leaking datas
+			use_sftp_command <<< "rm $sql_dump"
+			use_sftp_command <<< "rm $php_mysqldump"
+
+			rm $php_mysqldump && gzip -c $sql_dump > $tmp_sql && rm $sql_dump
+		fi
+	else
+		output -n -s bold "No Sql datas specified for this entity."
+	fi
+}
+mysql_init(){
+	tmp_sql="${backup_name}.sql.gz"
+
+	if [ $url ]; then url="http://${url}"
+	else url="http://${ssh_hostname#[[:alpha:]]*.}"; fi
+	if [ $mysql_host ]; then host=$mysql_host
+	else host="localhost"; fi
+	if [ $mysql_port ]; then port=$mysql_port
+	else port="3306"; fi
+}
+mysql_dump(){
+	use_ssh mysqldump -u $mysql_user -h $host -p$mysql_pwd -P $port $mysql_db --no-tablespaces
+}
+put_php_mysqldump(){
+	cat << EOF > "$php_mysqldump"
+<?php
+if(isset(\$_GET['dump']))
+	system("mysqldump -u $mysql_user -h $host -p$mysql_pwd -P $port $mysql_db > $sql_dump");
+?>
+EOF
+	use_sftp <<< "put $php_mysqldump"
+}
+test_database(){
+	mysql_init
+
+	if is_ssh; then
+		use_ssh mysqladmin -u $mysql_user -h $host -p$mysql_pwd -P $port status
+	else
+		if [ $mysql_db ]; then
+			php_mysqltest="mysqltest.php"
+			sql_test="mysqltest.txt"
+
+			create_temp_folder
+
+			put_php_mysqltest
+
+			curl -sL -o /dev/null "$url/$php_mysqltest?test"
+
+			while [[ $(curl -sL -o /dev/null -w %{http_code} "$url/$sql_test") != "200" ]]; do
+				printf '.'; sleep 2
+			done
+
+			use_sftp_command $sql_test $tmp_folder
+
+			output -n -s bold "$(cat $tmp_folder/$sql_test)"
+
+			use_sftp_command <<< "rm $sql_test"
+			use_sftp_command <<< "rm $php_mysqltest"
+
+			rm $php_mysqltest && rm $sql_test
+		else
+			output -n -s bold "No Sql datas specified for this entity."
+		fi
+	fi
+}
+put_php_mysqltest(){
+	cat << EOF > "$php_mysqltest"
+<?php
+if(isset(\$_GET['test']))
+	system("mysqladmin -u $mysql_user -h $host -p$mysql_pwd -P $port status > $sql_test");
+?>
+EOF
+	use_sftp <<< "put $php_mysqltest"
+}
+
+bucket_ls(){
+	$bucket_cmd ls -lh $bucket_prefix://$bucket_name/$1
+}
+bucket_cp(){
+	$bucket_cmd $bucket_cp_cmd $1 $bucket_prefix://$bucket_name/$2
+}
+createKey(){
+	if [ $(git config user.email) ]; then
+		git_email=$(git config user.email)
+	else read -p "Set your email or user@host here, or leave empty: " git_email
+	fi
+
+	if [ $git_email ]; then
+		git_email="-C $git_email"
+	fi
+
+	read -p "Set your passphrase here, or leave empty: " passphrase
+
+	if [ -z $2 ]; then
+		read -p "Enter file name in which to save the SSH key in $HOME/.ssh/: " ssh_key_name		
+		ssh_key_path=$HOME/.ssh/$ssh_key_name
+	else
+		ssh_key_path=$2
+	fi
+
+	ssh_key_path="${ssh_key_path/#\~/$HOME}"
+	
+	if [ $ssh_key_path ]
+	then
+		ssh-keygen -b 2048 -t rsa -f "$ssh_key_path" -N "$passphrase" $git_email
+
+		if [[ $? -eq 0 ]]; then
+			output -n "Key generated at $ssh_key_path."
+			read -p "Do you want to install that key on remote ? [y/n] " copy
+		else exit 1; fi
+
+		if [ $copy ] && [ $copy == "y" ]; then
+			output -n "Copying key to remote..."
+
+			if [ $1 ]; then ssh_remote=$1; fi
+			copyKey "$ssh_remote" $ssh_key_path
+		fi
+	else
+		output -n -e "No key path specified."
+	fi
+}
+copyKey(){
+	if [ $1 ]; then ssh_remote=$1
+	else read -p "Enter the username@hostanme, for which you want to authorized the key: " ssh_remote; fi
+
+	if [ $2 ]; then ssh_key_path="${2//\~/$HOME}"
+	else read -p "Enter full path name of the SSH key: " ssh_key_path; fi
+
+	if [ $ssh_key_path ] && [ $ssh_remote ]
+	then
+		ssh-copy-id -i $ssh_key_path $ssh_remote
+
+		if [[ $? -eq 0 ]]; then
+			output -n "🍺 The key has been authorized on remote."
+		else exit 1; fi
+	else 
+		output -n -e "No key or remote provided."
+	fi
+}
+
 link(){
 	if [ ! -f "$command_path$1" ];
 	then
@@ -240,152 +469,38 @@ unlink(){
 	fi
 }
 
-is_ssh(){
-	if [ -z $protocol ]; then return 0
-	else return 1; fi
-}
-use_ssh(){
-	ssh $ssh_user@$ssh_hostname -i $ssh_key $@
-}
-use_scp(){
-	scp -r -i $ssh_key $ssh_user@$ssh_hostname:$remote_dir $1
-}
-use_sftp(){
-	sftp -r -i $ssh_key $ssh_user@$ssh_hostname:$remote_dir $1
-}
-backup_folder(){
-	tmp_site_folder="$tmp_folder/site"
-
-	if is_ssh; then
-		use_scp $tmp_site_folder
-	else
-		use_sftp $tmp_site_folder
-	fi
-
-	tmp_backup="site.tar.gz"
-
-	make_zip $tmp_folder/$tmp_backup -C $tmp_site_folder .
-}
-backup_mysql(){	
-	if is_ssh; then
-		tmp_sql="database.sql"
-		mysql_dump  > $tmp_folder/$tmp_sql
-	fi
-}
-make_zip(){
-	tar -cvzPf $@
-}
-mysql_dump(){
-	if [ ! -z $mysql_host ]; then host=$mysql_host
-	else host="localhost"; fi
-
-	ssh $ssh_user@$ssh_hostname -i $ssh_key \
-		"mysqldump -u $mysql_user -h $host -p$mysql_pwd $mysql_db"
-}
-bucket_ls(){
-	$bucket_cmd ls $bucket_prefix://$bucket_name/$1
-}
-bucket_cp(){
-	$bucket_cmd $bucket_cp_cmd $1 $bucket_prefix://$bucket_name/$2
-}
-test_disk(){
-	if is_ssh; then
-		use_ssh du -h --max-depth=0 $remote_dir
-	else output -n "This site is using scp, test manually using sftp."
-	fi
-}
-test_database(){
-	if is_ssh; then
-		if [ ! -z $mysql_host ]; then host=$mysql_host
-		else host="localhost"; fi
-
-		use_ssh mysqladmin -u $mysql_user -h $host -p$mysql_pwd status
-	fi
-}
-createKey(){
-	if [ -z $1 ]; then		
-		read -p "Enter the username@hostanme, for which you want to authorized the key: " ssh_remote
-	else ssh_remote=$1; fi
-
-	if [ ! -z $(git config user.email) ]; then
-		git_email="-C $(git config user.email)"; fi
-
-	read -p "Set your passphrase here, or leave empty: " passphrase
-
-	if [ -z $2 ]; then
-		read -p "Enter file name in which to save the SSH key in $HOME/.ssh/: " ssh_key_name		
-		ssh_key_path=$HOME/.ssh/$ssh_key_name
-	else
-		ssh_key_path=$2
-	fi
-	
-	if [ ! -z $ssh_key_path ] && [ ! -z $ssh_remote ]
-	then
-		ssh-keygen -b 2048 -t rsa -f $ssh_key_path -q -N "$passphrase" $git_email
-
-		if [[ $? -eq 0 ]]; then
-			output -n "Key generated at $ssh_key_path. Copying to remote..."
-		else exit 1; fi
-
-		copyKey $ssh_remote $ssh_key_path
-	else
-		output -n -e "No name or remote provided."
-	fi
-}
-copyKey(){
-	if [ ! -z $2 ] && [ ! -z $1 ]; then
-		ssh_key_path="${2//\~/$HOME}"
-		ssh_remote=$1
-	else	
-		read -p "Enter the username@hostanme, for which you want to authorized the key: " ssh_remote
-		read -p "Enter full path name of the SSH key: " ssh_key_path
-	fi
-
-	if [ ! -z $ssh_key_path ] && [ ! -z $ssh_remote ]
-	then
-		ssh-copy-id -i $ssh_key_path $ssh_remote
-
-		if [[ $? -eq 0 ]]; then
-			output -n "🍺 The key has been authorized on remote."
-		else exit 1; fi
-	else 
-		output -n -e "No name or remote provided."
-	fi
-}
-
 case $1 in
 	backup)
-		if [ $2 == "disk" ] || [ $2 == "mysql" ]; then
-			envSetup $3
-		else envSetup $2; fi
+		if [ "$2" == "disk" ] || [ "$2" == "mysql" ]
+			then envSetup $3; else envSetup $2; fi
 
-		backup_name="${site}.$(date +%F_%T | tr ':' '-')"
-
-		if [ -d $TMDIR ]; then
-			tmp_folder="$(mktemp -d "$TMPDIR"${backup_name}.XXXXXX)"
-		else tmp_folder="$(mktemp -d /tmp/${backup_name}.XXXXXX)"
-		fi
-
-		cd $tmp_folder
+		create_temp_folder
 
 		case $2 in
-			disk) backup_folder;;
-			mysql) backup_mysql;;
+			disk) backup_folder ;;
+			mysql) backup_mysql ;;
 			*) backup_folder && backup_mysql;;
 		esac
 
-		make_zip $tmp_folder/all.tar.gz $tmp_backup $tmp_sql
+		if [ -d $tmp_site_folder ] || [ -f $tmp_sql ];
+		then
+			make_zip $tmp_backup $tmp_site_folder $tmp_sql
 
-		echo $backup_name: $tmp_folder >> $log_file
+			rm -r $tmp_site_folder $tmp_sql
 
-		bucket_cp $tmp_folder/all.tar.gz ${site}/${backup_name}.tar.gz
+			bucket_cp $tmp_backup ${site}/
+
+			echo $backup_name: $tmp_folder >> $log_file
+		fi
 	;;
 
-	connect) envSetup $2;  if is_ssh; then use_ssh; fi	;;
-	run) envSetup $2; shift 2; if is_ssh; then use_ssh $@; fi	;;
-	ls) if [ ! -z $2 ]; then envSetup $2;
-			output -s bold "$site :"; output -n "$ssh_hostname $remote_dir"
-		else checkConfig; printf '%s\n' "${sites[@]}"; fi
+	connect) envSetup $2;  if is_ssh; then use_ssh -t "cd $remote_dir; bash --login"; fi ;;
+	run) envSetup $2; shift 2; if is_ssh; then use_ssh "cd $remote_dir && $@"; fi ;;
+	ls|list)
+		if [ $2 ]; then envSetup $2;
+			output -s bold "$site :"; output -s bold "$ssh_hostname $remote_dir";
+			[[ $url ]] && output -s bold $url; output -n;
+		else checkConfig; printf '%s\n' "${sites[@]}" | sort; fi
 	;;
 	bucket) checkConfig; bucket_ls $2 ;;
 	test)
@@ -395,19 +510,24 @@ case $1 in
 			*) envSetup $2; test_disk && test_database
 		esac
 	;;
-
-	configure) checkConfig; newWebsite ;;
 	key)
-		 if [ ! -z $3 ]; then envSetup $3;
-			key_options="$ssh_user@$ssh_hostname $ssh_key"; fi
+		if [ $3 ] && [ $4 ]; then
+			key="$3"
+			remote="$4"
+		elif [ $3 ]; then
+			envSetup $3
+			remote="$ssh_user@$ssh_hostname"
+			key="$ssh_key"
+		fi
 
 		case $2 in
-			create) createKey $key_options;;
-			copy) copyKey $key_options;;
+			create) createKey $remote $key ;;
+			copy) copyKey $remote $key ;;
 		esac
 	;;
 	link) link $2 ;;
-	unlink)	unlink $2;;
+	unlink)	unlink $2 ;;
+	configure) checkConfig; newWebsite ;;
+	log) cat $log_file ;;
 	help|*) usage ;;
 esac
-
