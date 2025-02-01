@@ -207,6 +207,7 @@ envSetup(){
 		ssh_user="${site}_ssh_user"; ssh_user=${!ssh_user}
 		ssh_key="${site}_ssh_key"; ssh_key=${!ssh_key}
 		remote_dir="${site}_remote_dir"; remote_dir=${!remote_dir}
+		excluded_dir="${site}_excluded_dir"; excluded_dir=${!excluded_dir}
 		protocol="${site}_protocol"; protocol=${!protocol};
 		url="${site}_url"; url=${!url};
 
@@ -252,7 +253,7 @@ use_ssh(){
 	ssh $ssh_user@$ssh_hostname -i $ssh_key $@
 }
 use_scp(){
-	scp -r -i $ssh_key $ssh_user@$ssh_hostname:$remote_dir $1
+	rsync -av ${excluded_dir:+--exclude=$excluded_dir} -e "ssh -i $ssh_key" $ssh_user@$ssh_hostname:$remote_dir/ $1
 }
 use_sftp(){
 	sftp -r -q -i $ssh_key $ssh_user@$ssh_hostname:$remote_dir $1
@@ -479,7 +480,7 @@ case $1 in
 		case $2 in
 			disk) backup_folder ;;
 			mysql) backup_mysql ;;
-			*) backup_folder && backup_mysql;;
+			*) backup_folder && backup_mysql ;;
 		esac
 
 		if [ -d $tmp_site_folder ] || [ -f $tmp_sql ];
